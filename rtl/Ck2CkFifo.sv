@@ -3,7 +3,9 @@ module Ck2CkFifo # (
   FIFO_W = 16
 ) (
   input logic                 ckSlow,                       // Clock Slow
-  input logic                 ckFast,                       // Clock Fast      
+  input logic                 ckFast,                       // Clock Fast 
+  output logic                reqCkSlow,
+  output logic                reqCkFast,     
   input logic                 arstSlow,                     // 
   input logic                 arstFast,                     //
   // Slow synchronized IO
@@ -17,8 +19,9 @@ module Ck2CkFifo # (
 
 );
 
-  logic [FIFO_W-1:0]              pointer,
-  logic [FIFO_W-1:0][DATA_W-1:0]  fifo_rg,
+  logic [FIFO_W-1:0]              firstIn,                  // Was first in, increments by 1 when data popped.
+  logic [FIFO_W-1:0]              pointer,                  // Where the data is stored next, increments by 1 when data pushed.
+  logic [FIFO_W-1:0][DATA_W-1:0]  fifo_rg,                  // Fifo register
 
   ty_Ck2CkFifoStates currStCk2CkFifo;
   ty_Ck2CkFifoStates nextStCk2CkFifo;
