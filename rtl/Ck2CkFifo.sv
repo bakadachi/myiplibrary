@@ -9,11 +9,13 @@ module Ck2CkFifo # (
   input logic                 arstSlow,                     // 
   input logic                 arstFast,                     //
   // Slow synchronized IO
-  input logic [DATA_W-1:0]    dataIn,                       //
   input logic                 pop,                          //
   output logic                empty,                        //
+  output logic                ready,                        //
+  output logic [DATA_W-1:0]   dataOut,                      //
   // Fast synchronized IO
-  input logic [DATA_W-1:0]    push,                         //
+  input logic [DATA_W-1:0]    dataIn,                       //
+  input logic                 push,                         //
   output logic                full,                         //
   // Debug IF
   pa_Ck2CkFifo::ty_Ck2CkFifoStates status                   //
@@ -23,6 +25,7 @@ localparam FIFO_ADDR_W = clog2(FIFO_SIZE);
   logic [IFO_ADDR_W-1:0]              firstIn,              // Was first in, increments by 1 when data popped.
   logic [IFO_ADDR_W-1:0]              pointer,              // Where the data is stored next, increments by 1 when data pushed.
   logic [FIFO_W-1:0][DATA_W-1:0]      fifo_rg,              // Fifo register
+  logic [DATA_W-1:0]                  dataOut_int           //
 
   pa_Ck2CkFifo::ty_Ck2CkFifoStates currStCk2CkFifo;
   pa_Ck2CkFifo::ty_Ck2CkFifoStates nextStCk2CkFifo;
@@ -42,6 +45,11 @@ localparam FIFO_ADDR_W = clog2(FIFO_SIZE);
   always_comb begin : la_NextStateDecoder
     nextStCk2CkFifo = currStCk2CkFifo;
     case(nextStCk2CkFifo)
+      pa_Ck2CkFifo::EMPTY:
+      pa_Ck2CkFifo::PUSH:
+      pa_Ck2CkFifo::IDLE:
+      pa_Ck2CkFifo::POP:
+      pa_Ck2CkFifo::FULL:   
       default:
     endcase
   end
@@ -60,7 +68,12 @@ localparam FIFO_ADDR_W = clog2(FIFO_SIZE);
       if(arstFast)begin
 
       end else if(counterEna == 1)begin
-
+        pa_Ck2CkFifo::EMPTY:
+        pa_Ck2CkFifo::PUSH:
+        pa_Ck2CkFifo::IDLE:
+        pa_Ck2CkFifo::POP:
+        pa_Ck2CkFifo::FULL:   
+      default:
       end
     end
 
