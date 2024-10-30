@@ -1,80 +1,86 @@
-module Ck2CkFifo # (
-  DATA_W    = pa_Ck2CkFifo::DATA_W,                         //
-  FIFO_SIZE = pa_Ck2CkFifo::FIFO_SIZE                       //
+module async_fifo #(
+    parameter DATA_WIDTH = 8,         // Width of data
+    parameter FIFO_DEPTH = 16         // Depth of FIFO (must be a power of 2)
 ) (
-  input logic                 ckSlow,                       // Clock Slow
-  input logic                 ckFast,                       // Clock Fast 
-  output logic                reqCkSlow,                    //
-  output logic                reqCkFast,                    //
-  input logic                 arstSlow,                     // 
-  input logic                 arstFast,                     //
-  // Slow synchronized IO
-  input logic                 pop,                          //
-  output logic                empty,                        //
-  output logic                ready,                        //
-  output logic [DATA_W-1:0]   dataOut,                      //
-  // Fast synchronized IO
-  input logic [DATA_W-1:0]    dataIn,                       //
-  input logic                 push,                         //
-  output logic                full,                         //
-  // Debug IF
-  pa_Ck2CkFifo::ty_Ck2CkFifoStates status                   //
+    input  logic                clk_wr,       // Write clock domain
+    input  logic                clk_rd,       // Read clock domain
+    input  logic                rst_n,        // Active low reset
+    input  logic [DATA_WIDTH-1:0] wr_data,    // Write data input
+    input  logic                wr_en,        // Write enable
+    input  logic                rd_en,        // Read enable
+    output logic [DATA_WIDTH-1:0] rd_data,    // Read data output
+    output logic                full,         // FIFO full flag
+    output logic                empty         // FIFO empty flag
 );
 
-localparam FIFO_ADDR_W = clog2(FIFO_SIZE);
-  logic [IFO_ADDR_W-1:0]              firstIn,              // Was first in, increments by 1 when data popped.
-  logic [IFO_ADDR_W-1:0]              pointer,              // Where the data is stored next, increments by 1 when data pushed.
-  logic [FIFO_W-1:0][DATA_W-1:0]      fifo_rg,              // Fifo register
-  logic [DATA_W-1:0]                  dataOut_int           //
+    localparam ADDR_WIDTH = $clog2(FIFO_DEPTH);  // Address width based on FIFO depth
 
-  pa_Ck2CkFifo::ty_Ck2CkFifoStates currStCk2CkFifo;
-  pa_Ck2CkFifo::ty_Ck2CkFifoStates nextStCk2CkFifo;
+    // Memory to store data
+    logic [DATA_WIDTH-1:0] fifo_mem [0:FIFO_DEPTH-1];
 
-  always_ff(posedge ckFast, posedge arstFast)
-    begin : la_nextState
-      if(arstFast)begin : la_NexOpTransition
-        currStCk2CkFifo <= 8'h0;
-        nextStCk2CkFifo <= 8'h0; 
-      end else if(currStCk2CkFifo != nextStCk2CkFifo) begin
-        currStCk2CkFifo <= nextStCk2CkFifo;
-      end
-    end
-  
+    // Write and Read pointers in binary and gray code
+    logic [ADDR_WIDTH:0] wr_ptr_bin, wr_ptr_gray, wr_ptr_gray_sync1, wr_ptr_gray_sync2;
+    logic [ADDR_WIDTH:0] rd_ptr_bin, rd_ptr_gray, rd_ptr_gray_sync1, rd_ptr_gray_sync2;
 
-  // This selects operation
-  always_comb begin : la_NextStateDecoder
-    nextStCk2CkFifo = currStCk2CkFifo;
-    case(nextStCk2CkFifo)
-      pa_Ck2CkFifo::EMPTY:
-      pa_Ck2CkFifo::PUSH:
-      pa_Ck2CkFifo::IDLE:
-      pa_Ck2CkFifo::POP:
-      pa_Ck2CkFifo::FULL:   
-      default:
-    endcase
-  end
+    // Write and Read pointers for accessing FIFO
+    logic [ADDR_WIDTH-1:0] wr_addr, rd_addr;
 
-  always_ff(posedge ckFast, posedge arts)
-    begin
-      if(arstFast)begin : la_OutputDecoder
-      end else if(currStCk2CkFifo != nextStCk2CkFifo)begin
-      case(nextStCk2CkFifo)
-        default:
-      end
+    // Full and Empty flag generation
+    assign full = (wr_ptr_gray == {~rd_ptr_gray_sync2[ADDR_WIDTH:ADDR_WIDTH-1], rd_ptr_gray_sync2[ADDR_WIDTH-2:0]});
+    assign empty = (wr_ptr_gray_sync2 == rd_ptr_gray);
+
+    // Write pointer update
+    always @(posedge clk_wr or negedge rst_n) begin
+        if (!rst_n) begin
+            wr_ptr_bin <= 0;
+            wr_ptr_gray <= 0;
+        end else if (wr_en && !full) begin
+            wr_ptr_bin <= wr_ptr_bin + 1;
+            wr_ptr_gray <= (wr_ptr_bin + 1) ^ ((wr_ptr_bin + 1) >> 1);
+        end
     end
 
-  always_ff(posedge ckFast, posedge arstFast)
-    begin : la_Counter
-      if(arstFast)begin
+    // Write data into FIFO
+    always @(posedge clk_wr) begin
+        if (wr_en && !full) begin
+            fifo_mem[wr_ptr_bin[ADDR_WIDTH-1:0]] <= wr_data;
+        end
+    end
 
-      end else if(counterEna == 1)begin
-        pa_Ck2CkFifo::EMPTY:
-        pa_Ck2CkFifo::PUSH:
-        pa_Ck2CkFifo::IDLE:
-        pa_Ck2CkFifo::POP:
-        pa_Ck2CkFifo::FULL:   
-      default:
-      end
+    // Synchronize write pointer into read clock domain
+    always @(posedge clk_rd or negedge rst_n) begin
+        if (!rst_n) begin
+            wr_ptr_gray_sync1 <= 0;
+            wr_ptr_gray_sync2 <= 0;
+        end else begin
+            wr_ptr_gray_sync1 <= wr_ptr_gray;
+            wr_ptr_gray_sync2 <= wr_ptr_gray_sync1;
+        end
+    end
+
+    // Read pointer update
+    always @(posedge clk_rd or negedge rst_n) begin
+        if (!rst_n) begin
+            rd_ptr_bin <= 0;
+            rd_ptr_gray <= 0;
+        end else if (rd_en && !empty) begin
+            rd_ptr_bin <= rd_ptr_bin + 1;
+            rd_ptr_gray <= (rd_ptr_bin + 1) ^ ((rd_ptr_bin + 1) >> 1);
+        end
+    end
+
+    // Read data from FIFO
+    assign rd_data = fifo_mem[rd_ptr_bin[ADDR_WIDTH-1:0]];
+
+    // Synchronize read pointer into write clock domain
+    always @(posedge clk_wr or negedge rst_n) begin
+        if (!rst_n) begin
+            rd_ptr_gray_sync1 <= 0;
+            rd_ptr_gray_sync2 <= 0;
+        end else begin
+            rd_ptr_gray_sync1 <= rd_ptr_gray;
+            rd_ptr_gray_sync2 <= rd_ptr_gray_sync1;
+        end
     end
 
 endmodule
